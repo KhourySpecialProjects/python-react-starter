@@ -1,0 +1,178 @@
+[tools]
+node = "24.22.0"
+pnpm = "12.14.0"
+python = "3.14.8"
+uv = "0.13.1"
+ruff = "0.17.1"
+
+[env]
+# Loads DATABASE_URL and friends for the tasks below. Missing in CI, which is fine.
+_.file = ".env"
+
+# ─── setup ────────────────────────────────────────────────────────────────────
+
+[tasks.install]
+description = "Install frontend and backend dependencies on your machine (for editors and checks)"
+run = ["uv sync --directory backend", "pnpm install --dir frontend"]
+
+# ─── dev ──────────────────────────────────────────────────────────────────────
+
+[tasks.dev]
+description = "Start Postgres, the backend and the frontend with hot reload (http://localhost:5173)"
+run = "docker compose up --build"
+
+[tasks.down]
+description = "Stop every container (data in Postgres is kept)"
+run = "docker compose down"
+
+[tasks.logs]
+description = "Tail logs from every container (arg: service name, e.g. backend)"
+usage = 'arg "[service]" default=""'
+run = 'docker compose logs -f $usage_service'
+
+# ─── database ─────────────────────────────────────────────────────────────────
+
+[tasks."db:migrate"]
+description = "Apply pending migrations (the backend container also does this on start)"
+dir = "backend"
+run = "uv run alembic upgrade head"
+
+[tasks."db:rollback"]
+description = "Roll back the latest migration"
+dir = "backend"
+run = "uv run alembic downgrade -1"
+
+[tasks."db:revision"]
+description = "Generate a migration from changes to the models in backend/src/app/models (arg: short description)"
+usage = 'arg "<message>"'
+dir = "backend"
+run = 'uv run alembic revision --autogenerate -m "$usage_message"'
+
+[tasks."db:psql"]
+description = "Open psql on the local database"
+run = 'docker compose exec postgres psql -U "$SERVICE_USER_POSTGRES" -d "$POSTGRES_DB"'
+
+[tasks."db:reset"]
+description = "Delete the local database volume and start fresh"
+confirm = "Delete all local database data?"
+run = "docker compose down --volumes"
+
+# ─── contract ─────────────────────────────────────────────────────────────────
+
+[tasks."contract:export"]
+description = "Write the backend's OpenAPI contract to backend/openapi.json"
+dir = "backend"
+run = "uv run python -m app.export_openapi"
+
+[tasks."client:generate"]
+description = "Export the contract, then regenerate the typed frontend client in frontend/src/client"
+depends = ["contract:export"]
+dir = "frontend"
+run = "pnpm run generate:client"
+
+[tasks."contract:check"]
+description = "Fail if backend/openapi.json doesn't match the routes"
+dir = "backend"
+run = "uv run python -m app.export_openapi --check"
+
+[tasks."client:check"]
+description = "Fail if frontend/src/client doesn't match backend/openapi.json"
+dir = "frontend"
+run = '''
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+pnpm exec openapi-ts --silent --output "$tmp/client"
+if ! diff -r src/client "$tmp/client" > /dev/null; then
+  echo "frontend/src/client is out of date. Run: mise run client:generate"
+  exit 1
+fi
+echo "frontend/src/client is up to date"
+'''
+
+# ─── lint and format ──────────────────────────────────────────────────────────
+
+[tasks."lint:backend"]
+description = "Lint the backend (ruff)"
+dir = "backend"
+run = "ruff check ."
+
+[tasks."lint:backend:fix"]
+description = "Fix the backend's lint issues"
+dir = "backend"
+run = "ruff check --fix ."
+
+[tasks."lint:frontend"]
+description = "Lint the frontend (oxlint)"
+dir = "frontend"
+run = "pnpm run lint"
+
+[tasks."lint:frontend:fix"]
+description = "Fix the frontend's lint issues"
+dir = "frontend"
+run = "pnpm run lint:fix"
+
+[tasks.lint]
+description = "Lint the backend and frontend"
+depends = ["lint:backend", "lint:frontend"]
+
+[tasks."lint:fix"]
+description = "Fix lint issues in the backend and frontend"
+depends = ["lint:backend:fix", "lint:frontend:fix"]
+
+[tasks."fmt:backend"]
+description = "Check the backend's formatting (ruff)"
+dir = "backend"
+run = "ruff format --check ."
+
+[tasks."fmt:backend:fix"]
+description = "Format the backend"
+dir = "backend"
+run = "ruff format ."
+
+[tasks."fmt:frontend"]
+description = "Check the frontend's formatting (oxfmt)"
+dir = "frontend"
+run = "pnpm run format"
+
+[tasks."fmt:frontend:fix"]
+description = "Format the frontend"
+dir = "frontend"
+run = "pnpm run format:fix"
+
+[tasks.fmt]
+alias = ["format", "fmt:check"]
+description = "Check formatting for the backend and frontend"
+depends = ["fmt:backend", "fmt:frontend"]
+
+[tasks."fmt:fix"]
+alias = "format:fix"
+description = "Format the backend and frontend"
+depends = ["fmt:backend:fix", "fmt:frontend:fix"]
+
+# ─── typecheck, build ─────────────────────────────────────────────────────────
+
+[tasks."typecheck:backend"]
+description = "Typecheck the backend (mypy --strict)"
+dir = "backend"
+run = "uv run mypy"
+
+[tasks."typecheck:frontend"]
+description = "Typecheck the frontend (tsc)"
+dir = "frontend"
+run = "pnpm run typecheck"
+
+[tasks.typecheck]
+description = "Typecheck the backend and frontend"
+depends = ["typecheck:backend", "typecheck:frontend"]
+
+[tasks.check]
+description = "Run everything CI runs"
+depends = ["fmt", "lint", "typecheck", "contract:check", "client:check"]
+
+# A separate project name keeps this from replacing your `mise run dev` containers.
+[tasks."deploy:check"]
+description = "Build the deployed stack (nginx, no hot reload), wait until every container is healthy, then stop it"
+run = [
+  "docker compose -p python-react-starter-deploy -f compose.yaml up --build --wait",
+  "docker compose -p python-react-starter-deploy -f compose.yaml down --volumes",
+]
