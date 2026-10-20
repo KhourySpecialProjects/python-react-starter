@@ -10,6 +10,8 @@ engine = create_async_engine(settings.database_url)
 SessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 
 
+# FastAPI calls this once per request that asks for SessionDep: it opens a
+# session, hands it to the route, and closes it when the response is sent.
 async def get_session() -> AsyncGenerator[AsyncSession]:
     async with SessionLocal() as session:
         yield session

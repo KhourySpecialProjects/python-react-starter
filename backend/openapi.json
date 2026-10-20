@@ -11,7 +11,7 @@
         "operationId": "getHealth",
         "responses": {
           "200": {
-            "description": "The API and database are reachable",
+            "description": "The API is reachable",
             "content": {
               "application/json": {
                 "schema": {

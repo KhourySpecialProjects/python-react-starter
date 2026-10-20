@@ -22,6 +22,8 @@ async def log_requests(
     response = await call_next(request)
 
     status = response.status_code
+
+    # no logs for healthchecks to reduce unnecessary noise
     if request.url.path == "/api/v1/health" and status < 400:
         return response
 

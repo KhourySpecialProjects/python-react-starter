@@ -12,7 +12,6 @@ configure_logging()
 app = FastAPI(
     title="API",
     version="1.0.0",
-    # The spec is only written to backend/openapi.json. No docs pages are served.
     openapi_url=None,
     docs_url=None,
     redoc_url=None,
