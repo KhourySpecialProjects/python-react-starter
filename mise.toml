@@ -1,0 +1,188 @@
+[tools]
+node = "24.22.0"
+pnpm = "12.14.0"
+"npm:prisma" = "7.9.1"
+python = "3.14.8"
+uv = "0.13.1"
+ruff = "0.17.1"
+dbmate = "2.37.0"
+
+[env]
+_.file = ".env"
+# mise pipes task output to add the [task] prefix. Without this, tools see a pipe
+# instead of a terminal and drop their colors.
+FORCE_COLOR = "1"
+DBMATE_MIGRATIONS_DIR = "{{config_root}}/backend/migrations"
+DBMATE_NO_DUMP_SCHEMA = "true"
+
+[tasks.setup]
+description = "Install dependencies, start and migrate the database, and generate the contract"
+run = [
+  "uv sync --directory backend",
+  "pnpm install --dir frontend",
+  { task = "db:dev:migrate:up" },
+  { task = "contract" },
+]
+
+[tasks.dev]
+description = "Run the backend and frontend with hot reload"
+depends = ["dev:backend", "dev:frontend"]
+
+[tasks."dev:backend"]
+description = "Run the backend on :3000"
+depends = ["db:dev:up"]
+dir = "backend"
+env = { ENVIRONMENT = "development" }
+run = "uv run python -m app.main"
+
+[tasks."dev:frontend"]
+description = "Run the frontend on :5173"
+dir = "frontend"
+run = "pnpm exec vite"
+
+[tasks."docker:dev:up"]
+description = "Build and start web, backend and db in Docker (web on :8080)"
+run = "docker compose up --build --wait"
+
+[tasks."docker:dev:down"]
+description = "Stop every container"
+run = "docker compose down"
+
+[tasks."docker:dev:logs"]
+description = "Follow the logs of every container"
+run = "docker compose logs -f"
+
+[tasks."db:dev:up"]
+description = "Start the development database"
+run = "docker compose up -d db --wait"
+
+[tasks."db:dev:down"]
+description = "Stop and remove the development database container. Its data is kept."
+run = "docker compose down db"
+
+[tasks."db:dev:studio"]
+description = "Open Prisma Studio on the development database (http://localhost:5555)"
+depends = ["db:dev:up"]
+run = 'prisma studio --port 5555 --url "$DATABASE_URL"'
+
+[tasks."db:dev:psql"]
+description = "Open psql in the development database"
+depends = ["db:dev:up"]
+run = "docker compose exec db sh -c 'psql -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\"'"
+
+[tasks."db:dev:migrate:generate"]
+description = "Generate a SQL migration, with up and down sections, from changes to the models (arg: name)"
+usage = 'arg "<name>" help="snake_case description, e.g. add_users"'
+depends = ["db:dev:migrate:up"]
+dir = "backend"
+run = 'uv run python scripts/generate_migration.py "$usage_name"'
+
+[tasks."db:dev:migrate:up"]
+description = "Apply pending migrations to the development database"
+depends = ["db:dev:up"]
+run = "dbmate migrate"
+
+[tasks."db:dev:migrate:status"]
+description = "Show whether the development database is missing any migrations"
+depends = ["db:dev:up"]
+run = "dbmate status"
+
+[tasks."db:dev:migrate:down"]
+description = "Roll back the latest applied migration using its -- migrate:down section"
+confirm = "Roll back the latest migration? This can delete data."
+depends = ["db:dev:up"]
+run = "dbmate rollback"
+
+[tasks."db:dev:reset"]
+description = "Drop the development database and re-apply every migration"
+confirm = "Delete all data in the development database?"
+depends = ["db:dev:up"]
+run = ["dbmate drop", "dbmate up"]
+
+[tasks.contract]
+description = "Regenerate backend/openapi.json, then the frontend client from it"
+run = [{ task = "contract:backend:generate" }, { task = "contract:frontend:generate" }]
+
+[tasks."contract:backend:generate"]
+description = "Write the backend's OpenAPI spec to backend/openapi.json"
+dir = "backend"
+run = "uv run python scripts/openapi.py"
+
+[tasks."contract:frontend:generate"]
+description = "Generate the frontend client in frontend/src/api/generated from backend/openapi.json"
+run = "pnpm --dir frontend exec openapi-ts"
+
+[tasks."contract:check"]
+description = "Fail if backend/openapi.json is out of date with the backend code"
+depends = ["contract:backend:generate"]
+run = "git diff --exit-code --stat backend/openapi.json || (echo 'backend/openapi.json is out of date. Run mise run contract and commit it.' >&2; exit 1)"
+
+[tasks."lint:backend"]
+description = "Lint and typecheck the backend"
+dir = "backend"
+run = ["ruff check .", "uv run mypy"]
+
+[tasks."lint:backend:fix"]
+description = "Fix backend lint issues"
+run = "ruff check --fix backend"
+
+[tasks."lint:frontend"]
+description = "Lint and typecheck the frontend"
+depends = ["contract:frontend:generate"]
+dir = "frontend"
+run = ["pnpm exec oxlint --type-aware", "pnpm exec tsc --noEmit"]
+
+[tasks."lint:frontend:fix"]
+description = "Fix frontend lint issues"
+dir = "frontend"
+run = "pnpm exec oxlint --type-aware --fix"
+
+[tasks.lint]
+description = "Lint and typecheck everything"
+depends = ["lint:backend", "lint:frontend"]
+
+[tasks."lint:fix"]
+description = "Fix lint issues everywhere"
+depends = ["lint:backend:fix", "lint:frontend:fix"]
+
+[tasks."fmt:backend"]
+alias = "format:backend"
+description = "Check backend formatting"
+run = "ruff format --check backend"
+
+[tasks."fmt:backend:fix"]
+alias = "format:backend:fix"
+description = "Format the backend"
+run = "ruff format backend"
+
+[tasks."fmt:frontend"]
+alias = "format:frontend"
+description = "Check frontend formatting"
+dir = "frontend"
+run = "pnpm exec oxfmt --check"
+
+[tasks."fmt:frontend:fix"]
+alias = "format:frontend:fix"
+description = "Format the frontend"
+dir = "frontend"
+run = "pnpm exec oxfmt"
+
+[tasks.fmt]
+alias = "format"
+description = "Check formatting everywhere"
+depends = ["fmt:backend", "fmt:frontend"]
+
+[tasks."fmt:fix"]
+alias = "format:fix"
+description = "Format everything"
+depends = ["fmt:backend:fix", "fmt:frontend:fix"]
+
+[tasks.build]
+description = "Build the backend and frontend"
+depends = ["contract:frontend:generate"]
+dir = "frontend"
+run = "pnpm run build"
+
+[tasks.check]
+description = "Run everything CI runs"
+depends = ["fmt", "lint", "contract:check"]
