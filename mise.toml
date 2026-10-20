@@ -1,178 +1,189 @@
 [tools]
 node = "24.22.0"
 pnpm = "12.14.0"
+"npm:prisma" = "7.9.1"
 python = "3.14.8"
 uv = "0.13.1"
 ruff = "0.17.1"
+dbmate = "2.37.0"
 
 [env]
-# Loads DATABASE_URL and friends for the tasks below. Missing in CI, which is fine.
 _.file = ".env"
+DBMATE_MIGRATIONS_DIR = "{{config_root}}/backend/migrations"
+DBMATE_NO_DUMP_SCHEMA = "true"
 
-# ─── setup ────────────────────────────────────────────────────────────────────
-
-[tasks.install]
-description = "Install frontend and backend dependencies on your machine (for editors and checks)"
-run = ["uv sync --directory backend", "pnpm install --dir frontend"]
-
-# ─── dev ──────────────────────────────────────────────────────────────────────
+[tasks."setup:dev"]
+description = "Install dependencies, start and migrate the database, and generate the contract"
+run = [
+  "uv sync --directory backend",
+  "pnpm install --dir frontend",
+  { task = "db:dev:migrate:up" },
+  { task = "contract" },
+]
 
 [tasks.dev]
-description = "Start Postgres, the backend and the frontend with hot reload (http://localhost:5173)"
-run = "docker compose up --build"
+description = "Run the backend and frontend with hot reload"
+depends = ["dev:backend", "dev:frontend"]
 
-[tasks.down]
-description = "Stop every container (data in Postgres is kept)"
+[tasks."dev:backend"]
+description = "Run the backend on :3000"
+depends = ["db:dev:start"]
+dir = "backend"
+env = { ENVIRONMENT = "development" }
+run = "uv run python -m app.main"
+
+[tasks."dev:frontend"]
+description = "Run the frontend on :5173"
+dir = "frontend"
+run = "pnpm exec vite"
+
+[tasks."stack:dev:up"]
+description = "Build and start web, backend and db in Docker (web on :8080)"
+run = "docker compose up --build --wait"
+
+[tasks."stack:dev:down"]
+description = "Stop every container"
 run = "docker compose down"
 
-[tasks.logs]
-description = "Tail logs from every container (arg: service name, e.g. backend)"
-usage = 'arg "[service]" default=""'
-run = 'docker compose logs -f $usage_service'
+[tasks."stack:dev:logs"]
+description = "Follow the logs of every container"
+run = "docker compose logs -f"
 
-# ─── database ─────────────────────────────────────────────────────────────────
+[tasks."db:dev:start"]
+description = "Start the development database"
+run = "docker compose up -d db --wait"
 
-[tasks."db:migrate"]
-description = "Apply pending migrations (the backend container also does this on start)"
+[tasks."db:dev:stop"]
+description = "Stop the development database"
+run = "docker compose stop db"
+
+[tasks."db:dev:down"]
+description = "Remove the development database container. Its data is kept."
+run = "docker compose down db"
+
+[tasks."db:dev:studio"]
+description = "Open Prisma Studio on the development database (http://localhost:5555)"
+depends = ["db:dev:start"]
+run = 'prisma studio --port 5555 --url "$DATABASE_URL"'
+
+[tasks."db:dev:psql"]
+description = "Open psql in the development database"
+depends = ["db:dev:start"]
+run = "docker compose exec db sh -c 'psql -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\"'"
+
+[tasks."db:dev:migrate:generate"]
+description = "Generate a SQL migration, with up and down sections, from changes to the models (arg: name)"
+usage = 'arg "<name>" help="snake_case description, e.g. add_users"'
+depends = ["db:dev:migrate:up"]
 dir = "backend"
-run = "uv run alembic upgrade head"
+run = 'uv run python scripts/generate_migration.py "$usage_name"'
 
-[tasks."db:rollback"]
-description = "Roll back the latest migration"
+[tasks."db:dev:migrate:up"]
+description = "Apply pending migrations to the development database"
+depends = ["db:dev:start"]
+run = "dbmate migrate"
+
+[tasks."db:dev:migrate:status"]
+description = "Show whether the development database is missing any migrations"
+depends = ["db:dev:start"]
+run = "dbmate status"
+
+[tasks."db:dev:migrate:down"]
+description = "Roll back the latest applied migration using its -- migrate:down section"
+confirm = "Roll back the latest migration? This can delete data."
+depends = ["db:dev:start"]
+run = "dbmate rollback"
+
+[tasks."db:dev:reset"]
+description = "Drop the development database and re-apply every migration"
+confirm = "Delete all data in the development database?"
+depends = ["db:dev:start"]
+run = ["dbmate drop", "dbmate up"]
+
+[tasks.contract]
+description = "Regenerate backend/openapi.json, then the frontend client from it"
+run = [{ task = "contract:backend:generate" }, { task = "contract:frontend:generate" }]
+
+[tasks."contract:backend:generate"]
+description = "Write the backend's OpenAPI spec to backend/openapi.json"
 dir = "backend"
-run = "uv run alembic downgrade -1"
+run = "uv run python scripts/openapi.py"
 
-[tasks."db:revision"]
-description = "Generate a migration from changes to the models in backend/src/app/models (arg: short description)"
-usage = 'arg "<message>"'
-dir = "backend"
-run = 'uv run alembic revision --autogenerate -m "$usage_message"'
-
-[tasks."db:psql"]
-description = "Open psql on the local database"
-run = 'docker compose exec postgres psql -U "$SERVICE_USER_POSTGRES" -d "$POSTGRES_DB"'
-
-[tasks."db:reset"]
-description = "Delete the local database volume and start fresh"
-confirm = "Delete all local database data?"
-run = "docker compose down --volumes"
-
-# ─── contract ─────────────────────────────────────────────────────────────────
-
-[tasks."contract:export"]
-description = "Write the backend's OpenAPI contract to backend/openapi.json"
-dir = "backend"
-run = "uv run python -m app.export_openapi"
-
-[tasks."client:generate"]
-description = "Export the contract, then regenerate the typed frontend client in frontend/src/client"
-depends = ["contract:export"]
-dir = "frontend"
-run = "pnpm run generate:client"
+[tasks."contract:frontend:generate"]
+description = "Generate the frontend client in frontend/src/api/generated from backend/openapi.json"
+run = "pnpm --dir frontend exec openapi-ts"
 
 [tasks."contract:check"]
-description = "Fail if backend/openapi.json doesn't match the routes"
-dir = "backend"
-run = "uv run python -m app.export_openapi --check"
-
-[tasks."client:check"]
-description = "Fail if frontend/src/client doesn't match backend/openapi.json"
-dir = "frontend"
-run = '''
-tmp=$(mktemp -d)
-trap 'rm -rf "$tmp"' EXIT
-pnpm exec openapi-ts --silent --output "$tmp/client"
-if ! diff -r src/client "$tmp/client" > /dev/null; then
-  echo "frontend/src/client is out of date. Run: mise run client:generate"
-  exit 1
-fi
-echo "frontend/src/client is up to date"
-'''
-
-# ─── lint and format ──────────────────────────────────────────────────────────
+description = "Fail if backend/openapi.json is out of date with the backend code"
+depends = ["contract:backend:generate"]
+run = "git diff --exit-code --stat backend/openapi.json || (echo 'backend/openapi.json is out of date. Run mise run contract and commit it.' >&2; exit 1)"
 
 [tasks."lint:backend"]
-description = "Lint the backend (ruff)"
+description = "Lint and typecheck the backend"
 dir = "backend"
-run = "ruff check ."
+run = ["ruff check .", "uv run mypy"]
 
 [tasks."lint:backend:fix"]
-description = "Fix the backend's lint issues"
-dir = "backend"
-run = "ruff check --fix ."
+description = "Fix backend lint issues"
+run = "ruff check --fix backend"
 
 [tasks."lint:frontend"]
-description = "Lint the frontend (oxlint)"
+description = "Lint and typecheck the frontend"
+depends = ["contract:frontend:generate"]
 dir = "frontend"
-run = "pnpm run lint"
+run = ["pnpm exec oxlint --type-aware", "pnpm exec tsc --noEmit"]
 
 [tasks."lint:frontend:fix"]
-description = "Fix the frontend's lint issues"
+description = "Fix frontend lint issues"
 dir = "frontend"
-run = "pnpm run lint:fix"
+run = "pnpm exec oxlint --type-aware --fix"
 
 [tasks.lint]
-description = "Lint the backend and frontend"
+description = "Lint and typecheck everything"
 depends = ["lint:backend", "lint:frontend"]
 
 [tasks."lint:fix"]
-description = "Fix lint issues in the backend and frontend"
+description = "Fix lint issues everywhere"
 depends = ["lint:backend:fix", "lint:frontend:fix"]
 
 [tasks."fmt:backend"]
-description = "Check the backend's formatting (ruff)"
-dir = "backend"
-run = "ruff format --check ."
+alias = "format:backend"
+description = "Check backend formatting"
+run = "ruff format --check backend"
 
 [tasks."fmt:backend:fix"]
+alias = "format:backend:fix"
 description = "Format the backend"
-dir = "backend"
-run = "ruff format ."
+run = "ruff format backend"
 
 [tasks."fmt:frontend"]
-description = "Check the frontend's formatting (oxfmt)"
+alias = "format:frontend"
+description = "Check frontend formatting"
 dir = "frontend"
-run = "pnpm run format"
+run = "pnpm exec oxfmt --check"
 
 [tasks."fmt:frontend:fix"]
+alias = "format:frontend:fix"
 description = "Format the frontend"
 dir = "frontend"
-run = "pnpm run format:fix"
+run = "pnpm exec oxfmt"
 
 [tasks.fmt]
-alias = ["format", "fmt:check"]
-description = "Check formatting for the backend and frontend"
+alias = "format"
+description = "Check formatting everywhere"
 depends = ["fmt:backend", "fmt:frontend"]
 
 [tasks."fmt:fix"]
 alias = "format:fix"
-description = "Format the backend and frontend"
+description = "Format everything"
 depends = ["fmt:backend:fix", "fmt:frontend:fix"]
 
-# ─── typecheck, build ─────────────────────────────────────────────────────────
-
-[tasks."typecheck:backend"]
-description = "Typecheck the backend (mypy --strict)"
-dir = "backend"
-run = "uv run mypy"
-
-[tasks."typecheck:frontend"]
-description = "Typecheck the frontend (tsc)"
+[tasks.build]
+description = "Build the backend and frontend"
+depends = ["contract:frontend:generate"]
 dir = "frontend"
-run = "pnpm run typecheck"
-
-[tasks.typecheck]
-description = "Typecheck the backend and frontend"
-depends = ["typecheck:backend", "typecheck:frontend"]
+run = "pnpm run build"
 
 [tasks.check]
 description = "Run everything CI runs"
-depends = ["fmt", "lint", "typecheck", "contract:check", "client:check"]
-
-# A separate project name keeps this from replacing your `mise run dev` containers.
-[tasks."deploy:check"]
-description = "Build the deployed stack (nginx, no hot reload), wait until every container is healthy, then stop it"
-run = [
-  "docker compose -p python-react-starter-deploy -f compose.yaml up --build --wait",
-  "docker compose -p python-react-starter-deploy -f compose.yaml down --volumes",
-]
+depends = ["fmt", "lint", "contract:check"]

@@ -6,10 +6,10 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     """Read from environment variables, e.g. DATABASE_URL and LOG_LEVEL."""
 
+    environment: Literal["development", "production"] = "production"
     database_url: str
-    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
-    # "json" for deployed environments, so a log service can parse each line.
-    log_format: Literal["text", "json"] = "text"
+    port: int = 3000
+    log_level: Literal["debug", "info", "warning", "error"] = "info"
 
 
 settings = Settings()

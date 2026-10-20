@@ -1,24 +1,21 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "Starter API",
-    "version": "0.1.0"
+    "title": "API",
+    "version": "1.0.0"
   },
   "paths": {
     "/api/v1/health": {
       "get": {
-        "tags": [
-          "health"
-        ],
         "summary": "Get Health",
-        "operationId": "get_health",
+        "operationId": "getHealth",
         "responses": {
           "200": {
-            "description": "Successful Response",
+            "description": "The API and database are reachable",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HealthResponse"
+                  "$ref": "#/components/schemas/Health"
                 }
               }
             }
@@ -26,24 +23,21 @@
         }
       }
     },
-    "/api/v1/notes": {
+    "/api/v1/messages": {
       "get": {
-        "tags": [
-          "notes"
-        ],
-        "summary": "List Notes",
-        "operationId": "list_notes",
+        "summary": "List Messages",
+        "operationId": "listMessages",
         "responses": {
           "200": {
-            "description": "Successful Response",
+            "description": "The 50 most recent messages",
             "content": {
               "application/json": {
                 "schema": {
                   "items": {
-                    "$ref": "#/components/schemas/NoteResponse"
+                    "$ref": "#/components/schemas/Message"
                   },
                   "type": "array",
-                  "title": "Response List Notes"
+                  "title": "Response Listmessages"
                 }
               }
             }
@@ -54,7 +48,7 @@
   },
   "components": {
     "schemas": {
-      "HealthResponse": {
+      "Health": {
         "properties": {
           "status": {
             "type": "string",
@@ -66,31 +60,31 @@
         "required": [
           "status"
         ],
-        "title": "HealthResponse"
+        "title": "Health"
       },
-      "NoteResponse": {
+      "Message": {
         "properties": {
           "id": {
             "type": "integer",
             "title": "Id"
           },
-          "body": {
+          "text": {
             "type": "string",
-            "title": "Body"
+            "title": "Text"
           },
-          "created_at": {
+          "createdAt": {
             "type": "string",
             "format": "date-time",
-            "title": "Created At"
+            "title": "Createdat"
           }
         },
         "type": "object",
         "required": [
           "id",
-          "body",
-          "created_at"
+          "text",
+          "createdAt"
         ],
-        "title": "NoteResponse"
+        "title": "Message"
       }
     }
   }

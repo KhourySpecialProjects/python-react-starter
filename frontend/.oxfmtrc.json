@@ -1,4 +1,3 @@
 {
-  "$schema": "./node_modules/oxfmt/configuration_schema.json",
-  "ignorePatterns": ["dist/**", "src/client/**"]
+  "ignorePatterns": ["dist/**", "src/api/generated/**", "pnpm-lock.yaml"]
 }

@@ -1,43 +1,63 @@
-# Working with agents
+# Working in this repo
 
-Rules for anyone writing code in this repo, human or AI agent. Coding agents
-(Claude Code, Codex, Cursor, Copilot) read this file automatically.
-`CLAUDE.md` is a symlink to it.
+Rules for anyone changing code here, human or agent. Before editing `backend/` or
+`frontend/`, also read the matching file in `.agents/rules/`.
 
-This is a starting point. Add a rule when you catch yourself correcting the
-same mistake twice.
+## Before you start
 
-Before changing `backend/`, read `.agents/rules/backend.md`. Before changing
-`frontend/`, read `.agents/rules/frontend.md`.
-
-## Before you change anything
-
-- Read the code you are about to change, and the code that calls it.
-- Make the smallest change that solves the problem.
-- Follow the patterns already in the repo. If one looks wrong, ask before
-  replacing it.
-
-## Adding code and dependencies
-
-- Do not add a dependency for something the standard library or an existing
-  dependency already does. Say why when you add one.
-- Do not add abstractions, config options or files the task does not need.
-- Two similar blocks of code are fine. Extract a shared function on the third.
+- Read `README.md` and the code you are about to change.
+- Make the smallest change that does the job. No extra abstractions, dependencies or
+  config the task does not need.
+- Follow the patterns already in the repo before inventing new ones.
 
 ## Writing code
 
-- Names carry the meaning. If a variable needs a comment to explain what it
-  holds, rename it.
-- Comments explain why, not what. Delete comments that restate the code.
-- Use guard clauses and early returns instead of nested `if`s.
-- Validate input once, where it enters the system (request bodies, query
-  params). Trust it after that.
-- Do not swallow errors. If you cannot handle one, let it surface.
-- Delete code nothing uses, including commented-out code.
+- Clear names over comments. Only comment what a reader would otherwise get wrong.
+- Guard clauses and early returns instead of nested `if`s.
+- Keep functions short and focused on one thing.
+- Delete dead code and commented-out code. Git remembers it.
+- Validate untrusted input once, with pydantic, where it enters the system. Trust it
+  after that.
+- In the frontend, write modern TypeScript: arrow functions, `type` instead of
+  `interface`, no `enum` or `namespace`.
+
+## The database
+
+The SQLAlchemy models in `backend/src/app/models/` are the source of truth for every
+table. Change the database only this way:
+
+1. Edit a model, or add one and import it in `models/__init__.py`.
+2. Run `mise run db:dev:migrate:generate <name>`. It compares the models with the
+   database and writes the SQL to a new file in `backend/migrations/`.
+3. Read the generated SQL, then run `mise run db:dev:migrate:up`.
+4. `mise run db:dev:migrate:status` shows whether the database is missing migrations.
+
+Never write schema SQL by hand and never edit a migration that is already on `main`.
+The only SQL you add to a migration is seed data.
+
+## Queries
+
+Every query must read as SQL. Use SQLAlchemy's `select()`, `insert()`, `update()` and
+`delete()`, or `text()` with bound parameters, and run them on the session:
+
+```python
+rows = await session.scalars(
+    select(models.Message).where(models.Message.id == message_id)
+)
+```
+
+- Never use the ORM's object style: `session.query()`, `session.get()`,
+  `session.add()`, `session.delete()` or lazy-loaded relationships.
+- Never build SQL strings with f-strings or `%`. Pass values as parameters.
+
+## The API contract
+
+The routes and pydantic schemas are the source of truth for the API.
+`backend/openapi.json` is generated from them and committed.
+`frontend/src/api/generated/` is generated from that file and gitignored. Never edit
+either by hand. After changing a route, run `mise run contract` and commit
+`backend/openapi.json`.
 
 ## Finishing
 
-- Run `mise run check` and fix what it reports. It runs the same checks as CI.
-- If you changed a route or a response schema, run `mise run client:generate`
-  and commit the regenerated files.
-- Say what you ran and what you did not.
+- Run `mise run check` and fix everything it reports.

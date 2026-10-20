@@ -1,55 +1,25 @@
 name: CI
 
 on:
-  pull_request:
   push:
     branches: [main]
+  pull_request:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
-# Every step calls the same mise task you run locally, so `mise run check`
+# Every step runs the same mise task you run locally, so `mise run check`
 # passing on your machine means these pass too.
 jobs:
-  backend_lint:
-    name: backend / lint
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: jdx/mise-action@v5
-        with:
-          install_args: python uv ruff
-      - run: uv sync --locked --directory backend
-      - run: mise run lint:backend
-      - run: mise run typecheck:backend
-      - run: mise run contract:check
-        env:
-          # Settings require a URL to import the app. Nothing connects to it.
-          DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
-
-  backend_format:
-    name: backend / format
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: jdx/mise-action@v5
-        with:
-          install_args: ruff
-      - run: mise run fmt:backend
-
   frontend_lint:
     name: frontend / lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: jdx/mise-action@v5
-        with:
-          install_args: node pnpm
       - run: pnpm install --frozen-lockfile --dir frontend
       - run: mise run lint:frontend
-      - run: mise run typecheck:frontend
-      - run: mise run client:check
 
   frontend_format:
     name: frontend / format
@@ -57,7 +27,31 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: jdx/mise-action@v5
-        with:
-          install_args: node pnpm
       - run: pnpm install --frozen-lockfile --dir frontend
       - run: mise run fmt:frontend
+
+  backend_lint:
+    name: backend / lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v5
+      - run: uv sync --locked --directory backend
+      - run: mise run lint:backend
+
+  backend_contract:
+    name: backend / contract
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v5
+      - run: uv sync --locked --directory backend
+      - run: mise run contract:check
+
+  backend_format:
+    name: backend / format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v5
+      - run: mise run fmt:backend

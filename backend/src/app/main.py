@@ -1,44 +1,35 @@
-from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
-
-import httpx
+import uvicorn
 from fastapi import FastAPI
-from fastapi.routing import APIRoute
+from pydantic.alias_generators import to_camel
 
-from app.core.db import engine
-from app.core.logging_config import configure_logging
-from app.core.middleware import RequestLoggingMiddleware
-from app.core.settings import settings
+from app.config.logger import configure_logging
+from app.config.settings import settings
+from app.middleware.request_logger import log_requests
 from app.routes import api_router
 
+configure_logging()
 
-@asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    async with httpx.AsyncClient(timeout=10) as http_client:
-        app.state.http_client = http_client
-        yield
-    await engine.dispose()
+app = FastAPI(
+    title="API",
+    version="1.0.0",
+    # The spec is only written to backend/openapi.json. No docs pages are served.
+    openapi_url=None,
+    docs_url=None,
+    redoc_url=None,
+    # The handler name in camelCase becomes the operationId, so the generated
+    # frontend client gets listMessages() instead of listMessagesApiV1MessagesGet().
+    generate_unique_id_function=lambda route: to_camel(route.name),
+)
+app.middleware("http")(log_requests)
+app.include_router(api_router)
 
 
-def operation_id(route: APIRoute) -> str:
-    """Use the handler's name as the OpenAPI operationId, so the generated
-    frontend client gets `listNotes()` instead of `listNotesApiV1NotesGet()`."""
-    return route.name
-
-
-def create_app() -> FastAPI:
-    configure_logging(settings.log_level, settings.log_format)
-
-    app = FastAPI(
-        title="Starter API",
-        lifespan=lifespan,
-        docs_url="/api/v1/docs",
-        openapi_url="/api/v1/openapi.json",
-        generate_unique_id_function=operation_id,
+if __name__ == "__main__":
+    development = settings.environment == "development"
+    uvicorn.run(
+        "app.main:app",
+        host="127.0.0.1" if development else "0.0.0.0",
+        port=settings.port,
+        reload=development,
+        log_config=None,
     )
-    app.add_middleware(RequestLoggingMiddleware)
-    app.include_router(api_router)
-    return app
-
-
-app = create_app()

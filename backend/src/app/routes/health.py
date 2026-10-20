@@ -1,12 +1,13 @@
 from fastapi import APIRouter
+from sqlalchemy import text
 
-from app.schemas.health import HealthResponse
+from app.config.db import SessionDep
+from app.schemas.health import Health
 
-router = APIRouter(tags=["health"])
+router = APIRouter()
 
 
-# Async and DB-free on purpose: it runs on the event loop, so it answers right
-# away even while other requests are waiting on Postgres.
-@router.get("/health")
-async def get_health() -> HealthResponse:
-    return HealthResponse(status="ok")
+@router.get("/health", response_description="The API and database are reachable")
+async def get_health(session: SessionDep) -> Health:
+    await session.execute(text("SELECT 1"))
+    return Health(status="ok")

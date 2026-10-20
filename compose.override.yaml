@@ -1,50 +1,12 @@
-# Local settings for your laptop, merged automatically on top of compose.yaml
-# whenever you run `docker compose ...` (or `mise run dev`) in this folder.
-#
-# Differences from the deployed setup:
-#   - images are built from the `local` stage of each Dockerfile
-#   - source folders are bind-mounted, so edits on your machine hot-reload
-#   - ports are published to localhost
-#   - a .env file is required (cp .env.example .env)
-
 services:
-  postgres:
+  db:
     environment:
-      # ":?" stops every `docker compose` command with this message until .env exists.
-      POSTGRES_USER: "${SERVICE_USER_POSTGRES:?not set. Create your .env file: cp .env.example .env}"
-      POSTGRES_PASSWORD: "${SERVICE_PASSWORD_POSTGRES:?not set. Create your .env file: cp .env.example .env}"
-      POSTGRES_DB: "${POSTGRES_DB:?not set. Create your .env file: cp .env.example .env}"
+      POSTGRES_USER: ${SERVICE_USER_POSTGRES:?missing, run cp .env.example .env}
+      POSTGRES_PASSWORD: ${SERVICE_PASSWORD_POSTGRES:?missing, run cp .env.example .env}
+      POSTGRES_DB: ${POSTGRES_DB:?missing, run cp .env.example .env}
     ports:
-      # For mise db:* tasks and database tools on your machine (psql, TablePlus, DBeaver).
-      # Set POSTGRES_PORT in .env if something else already uses 5432.
       - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
 
-  backend:
-    build:
-      target: local
-    environment:
-      LOG_FORMAT: text
-    volumes:
-      - ./backend:/app
-    ports:
-      # The API docs live at http://localhost:8000/api/v1/docs. The frontend reaches
-      # the API through Vite's proxy at http://localhost:5173/api/v1.
-      - "127.0.0.1:8000:8000"
-    healthcheck:
-      # First start installs packages, which can take a minute.
-      start_period: 120s
-
   web:
-    build:
-      target: local
-    volumes:
-      - ./frontend:/app
-      # Keeps the container's Linux node_modules separate from the one on your machine.
-      - /app/node_modules
     ports:
-      - "127.0.0.1:5173:5173"
-    # In dev the frontend does not need to wait for the backend to be healthy.
-    depends_on: !reset {}
-    healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:5173/"]
-      start_period: 120s
+      - "127.0.0.1:8080:8080"
